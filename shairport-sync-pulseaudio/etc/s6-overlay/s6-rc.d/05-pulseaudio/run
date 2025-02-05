@@ -1,0 +1,3 @@
+#!/command/with-contenv sh
+echo "Starting pulseaudio"
+exec /usr/bin/pulseaudio --system --disallow-exit --disallow-module-loading

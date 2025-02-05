@@ -1,0 +1,85 @@
+name: build-and-push
+
+on:
+  workflow_call:
+    inputs:
+      root:
+        description: 'root directory to look for Dockerfiles'
+        required: true
+        default: '.'
+        type: string
+      build_all:
+        description: 'build all images'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  generate-matrix:
+    name: Generate build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Get changed files
+        if: ${{ inputs.build_all == false }}
+        id: changed-files
+        with:
+          dir_names: "true"
+          path: ${{ inputs.root }}
+        uses: tj-actions/changed-files@v35.9.2
+      - id: set-matrix
+        run: |
+          echo "matrix=$(
+            for dir in ${{ inputs.build_all && format('{0}/*', inputs.root) || steps.changed-files.outputs.all_changed_files }}; do
+              [[ -f "$dir/Dockerfile" ]] || continue
+              name="$(basename "$dir")"
+              jq -n --arg dir "$dir" --arg name "${name//_/-}" '{"dir": $dir, "name": $name}'
+            done | jq -c -r -s '.'
+          )" >> "$GITHUB_OUTPUT"
+
+  build-and-push-images:
+    needs: [generate-matrix]
+    runs-on: ubuntu-latest
+    if: ${{ needs.generate-matrix.outputs.matrix != '[]' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          lfs: true
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+            images: ghcr.io/${{ github.repository }}/${{ matrix.dir }}
+            tags: |
+                # 'latest' on main branch
+                type=ref,event=branch,pattern=latest
+                # Semver from a tag like v1.2.3 => v1.2.3, v1.2, and v1
+                type=semver,pattern=v{{version}}
+                type=semver,pattern=v{{major}}.{{minor}}
+                type=semver,pattern=v{{major}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+            context: ${{ matrix.dir }}
+            file: ${{ matrix.dir }}/Dockerfile
+            push: true
+            platforms: linux/amd64,linux/arm64
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}
