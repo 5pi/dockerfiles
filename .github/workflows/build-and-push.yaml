@@ -38,7 +38,7 @@ jobs:
             for dir in ${{ inputs.build_all && format('{0}/*', inputs.root) || steps.changed-files.outputs.all_changed_files }}; do
               [[ -f "$dir/Dockerfile" ]] || continue
               name="$(basename "$dir")"
-              jq -n --arg dir "$dir" --arg name "${name//_/-}" '{"dir": $dir, "name": $name}'
+              jq -n --arg dir "${dir#./}" --arg name "${name//_/-}" '{"dir": $dir, "name": $name}'
             done | jq -c -r -s '.'
           )" >> "$GITHUB_OUTPUT"
 
