@@ -1,7 +1,8 @@
 name: build-and-push
 
 on:
-  workflow_call:
+  push: {}
+  workflow_dispatch:
     inputs:
       root:
         description: 'root directory to look for Dockerfiles'
